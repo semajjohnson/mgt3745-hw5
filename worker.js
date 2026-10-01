@@ -1,5 +1,6 @@
 // worker.js
-// The whole server for The Pool. One row per track-and-person pair.
+// The whole server for The Pool. One row per track-and-person pair, with mood
+// labels in their own table keyed to the entry row.
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -9,6 +10,7 @@ const CORS = {
 
 const maxTrackLength = 200;
 const maxSourceLength = 60;
+const maxLabelLength = 30;
 
 export default {
   async fetch(request, env) {
@@ -37,11 +39,25 @@ async function handle(request, env) {
       { status: 500, headers: CORS });
   }
 
+  if (request.method === "GET" && url.pathname === "/") {
+    return Response.json(
+      { service: "The Pool", entries: "/entries", repository: "https://github.com/semajjohnson/mgt3745-hw5" },
+      { headers: CORS });
+  }
+
   // Dismissed rows stay in the table so a dismissed pair can never be re-added (A7).
   if (request.method === "GET" && url.pathname === "/entries") {
     const { results } = await env.DB.prepare(
       "SELECT id, track, source, created_at FROM entries WHERE dismissed = 0 ORDER BY id").all();
-    return Response.json(results, { headers: CORS });
+    const { results: labelRows } = await env.DB.prepare(
+      "SELECT entry_id, label FROM labels ORDER BY label").all();
+    // Labels are attached here rather than joined and concatenated, so a label
+    // containing a comma cannot be split apart on the way out (A10).
+    const withLabels = results.map(row => ({
+      ...row,
+      labels: labelRows.filter(labelRow => labelRow.entry_id === row.id).map(labelRow => labelRow.label),
+    }));
+    return Response.json(withLabels, { headers: CORS });
   }
 
   if (request.method === "POST" && url.pathname === "/entries") {
@@ -83,6 +99,54 @@ async function handle(request, env) {
   if (request.method === "POST" && dismissMatch) {
     const result = await env.DB.prepare(
       "UPDATE entries SET dismissed = 1 WHERE id = ?").bind(dismissMatch[1]).run();
+    if (!result.meta.changes) return new Response("not found", { status: 404, headers: CORS });
+    return new Response(null, { status: 204, headers: CORS });
+  }
+
+  // A10 and A12: a label belongs to one entry row and is validated here, where
+  // the rule cannot be bypassed by editing the page.
+  const labelMatch = url.pathname.match(/^\/entries\/(\d+)\/labels$/);
+  if (request.method === "POST" && labelMatch) {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return badRequest("body must be JSON");
+    }
+    const label = typeof body.label === "string" ? body.label.trim() : "";
+    if (!label) return badRequest("label required");
+    if (label.length > maxLabelLength) {
+      return badRequest("label must be " + maxLabelLength + " characters or fewer");
+    }
+
+    const entry = await env.DB.prepare("SELECT id FROM entries WHERE id = ?")
+      .bind(labelMatch[1]).first();
+    if (!entry) return new Response("not found", { status: 404, headers: CORS });
+
+    const existingLabel = await env.DB.prepare(
+      "SELECT id FROM labels WHERE entry_id = ? AND LOWER(label) = LOWER(?)")
+      .bind(labelMatch[1], label).first();
+    if (existingLabel) return badRequest("that label is already on this item");
+
+    await env.DB.prepare("INSERT INTO labels (entry_id, label) VALUES (?, ?)")
+      .bind(labelMatch[1], label).run();
+    return new Response(null, { status: 201, headers: CORS });
+  }
+
+  const labelRemoveMatch = url.pathname.match(/^\/entries\/(\d+)\/labels\/remove$/);
+  if (request.method === "POST" && labelRemoveMatch) {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return badRequest("body must be JSON");
+    }
+    const label = typeof body.label === "string" ? body.label.trim() : "";
+    if (!label) return badRequest("label required");
+
+    const result = await env.DB.prepare(
+      "DELETE FROM labels WHERE entry_id = ? AND LOWER(label) = LOWER(?)")
+      .bind(labelRemoveMatch[1], label).run();
     if (!result.meta.changes) return new Response("not found", { status: 404, headers: CORS });
     return new Response(null, { status: 204, headers: CORS });
   }
