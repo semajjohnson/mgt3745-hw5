@@ -29,6 +29,16 @@
 
     <p id="save-status" role="status" aria-live="polite"></p>
 
+    <section id="filter-section" hidden aria-label="Filter pool by mood label">
+      <h2>Filter by label</h2>
+      <div id="filter-buttons" role="group" aria-label="Mood label filters"></div>
+    </section>
+
+    <p id="active-filter-display" hidden role="status" aria-live="polite">
+      Filtering by: <span id="active-filter-label"></span>
+      <button type="button" id="clear-filter">Clear filter</button>
+    </p>
+
     <h2>Pool</h2>
     <p id="empty-state">Nothing in the pool yet.</p>
     <ul id="pool-list" aria-label="Pool items"></ul>

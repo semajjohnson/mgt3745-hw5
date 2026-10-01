@@ -23,3 +23,15 @@ button:focus-visible, input:focus-visible { outline: 3px solid #b16d00; outline-
 .item-track { overflow-wrap: anywhere; line-height: 1.4; }
 .item-meta { font-size: 0.875rem; color: #46586b; overflow-wrap: anywhere; }
 .remove-button { background: #fff; color: #123552; }
+
+#filter-section { margin-top: 2rem; }
+#filter-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.filter-button { background: #fff; color: #123552; }
+.filter-button[aria-pressed="true"] { background: #123552; color: #fff; }
+#active-filter-display { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+#clear-filter { background: #fff; color: #123552; }
+.item-labels { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+.label-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; font-size: 0.875rem; background: #e4ebf1; border-radius: 1rem; }
+.label-remove { min-height: 0; margin: 0; padding: 0 0.3rem; font-size: 0.8rem; line-height: 1.4; background: transparent; color: #46586b; border: none; }
+.label-input { width: auto; flex: 0 1 10rem; padding: 0.35rem 0.5rem; font-size: 0.875rem; }
+.label-add { min-height: 0; margin: 0; padding: 0.35rem 0.6rem; font-size: 0.875rem; background: #fff; color: #123552; }
