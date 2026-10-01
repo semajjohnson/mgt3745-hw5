@@ -1,90 +1,175 @@
-// app.js
-// Behavior and data. Three functions: load, save, render. Same shape as HW3.
-// What changed in HW4 is where load and save go: two lines, plus what
-// happens when they fail. Everything else that changes is a consequence of
-// those two lines, and that is what HW4 asks you to write down.
+(() => {
+  'use strict';
 
-// Paste your deployed Worker URL here after `npx wrangler deploy`.
-const API = "https://mgt3745-hw4.YOUR-SUBDOMAIN.workers.dev";
+  const apiBase = 'https://mgt3745-hw4.semajjohnson.workers.dev';
+  const maxTrackLength = 200;
+  const maxSourceLength = 60;
 
-// ---- HW3, for the record (superseded by ADR-002) ------------------------
-// function load()      { return JSON.parse(localStorage.getItem("entries") || "[]"); }
-// function save(list)  { localStorage.setItem("entries", JSON.stringify(list)); }
-// -------------------------------------------------------------------------
+  const poolForm = document.querySelector('#pool-form');
+  const trackInput = document.querySelector('#track-input');
+  const sourceInput = document.querySelector('#source-input');
+  const poolList = document.querySelector('#pool-list');
+  const formError = document.querySelector('#form-error');
+  const saveStatus = document.querySelector('#save-status');
+  const emptyState = document.querySelector('#empty-state');
 
-const form = document.getElementById("entry-form");
-const input = document.getElementById("entry-text");
-const list = document.getElementById("entry-list");
-const status = document.getElementById("status");
+  // ?apiDown points the page at a path the Worker does not answer, so the
+  // failed-response path can be demonstrated without taking the server down.
+  const api = new URLSearchParams(window.location.search).has('apiDown')
+    ? apiBase + '/not-a-real-endpoint'
+    : apiBase + '/entries';
 
-function showError(message) {
-  // The user sees it on the page. Nothing is thrown in the console.
-  status.textContent = message;
-}
+  let poolItems = [];
 
-function clearError() {
-  status.textContent = "";
-}
-
-async function load() {
-  const res = await fetch(API + "/entries");
-  if (!res.ok) { showError("could not load entries"); return []; }
-  return res.json();
-}
-
-async function save(entry) {
-  const res = await fetch(API + "/entries", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(entry),
-  });
-  if (!res.ok) {
-    // The Worker's 400 path sends a short reason in the body. Show it.
-    const reason = await res.text();
-    showError("could not save: " + (reason || res.status));
-    return false;
+  function showError(message) {
+    formError.textContent = message;
+    saveStatus.textContent = '';
   }
-  return true;
-}
 
-function render(entries) {
-  // Unchanged from HW3. textContent, never innerHTML.
-  // The server does not get to write HTML into your page either.
-  list.replaceChildren();
-  for (const entry of entries) {
-    const li = document.createElement("li");
-    const text = document.createElement("span");
-    text.textContent = entry.text;
-    const when = document.createElement("time");
-    when.textContent = entry.created_at || "";
-    li.append(text, when);
-    list.append(li);
+  // The server returns one row per track-and-person pair, so a track
+  // recommended by two people is merged here for display (A6).
+  function mergeByTrack(rows) {
+    const merged = [];
+    rows.forEach(row => {
+      const match = merged.find(item => item.track.toLowerCase() === row.track.toLowerCase());
+      if (match) {
+        match.sources.push(row.source);
+        match.ids.push(row.id);
+      } else {
+        merged.push({ track: row.track, sources: [row.source], ids: [row.id], createdAt: row.created_at });
+      }
+    });
+    return merged;
   }
-}
 
-async function refresh() {
-  clearError();
-  try {
-    render(await load());
-  } catch {
-    // The network itself failed (offline, DNS, CORS). fetch throws here.
-    showError("could not reach the server");
-  }
-}
-
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  clearError();
-  const entry = { text: input.value.trim() };
-  try {
-    const ok = await save(entry);
-    if (ok) {
-      input.value = "";
-      await refresh();
+  async function loadPool() {
+    try {
+      const response = await fetch(api);
+      if (!response.ok) {
+        showError('Could not load the pool. The server returned ' + response.status + '.');
+        return [];
+      }
+      return mergeByTrack(await response.json());
+    } catch {
+      // A network failure must say so on the page rather than only in the console.
+      showError('Could not reach the server. Check your connection and reload.');
+      return [];
     }
-  } catch {
-    showError("could not reach the server");
   }
-});
 
-refresh();
+  async function savePool(track, source) {
+    try {
+      const response = await fetch(api, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ track, source })
+      });
+      if (response.ok) return true;
+      // The Worker's 400 messages name the problem, so they are shown as written.
+      showError(await response.text());
+      return false;
+    } catch {
+      showError('Could not reach the server. Your entry was not saved.');
+      return false;
+    }
+  }
+
+  async function dismissItem(id) {
+    try {
+      const response = await fetch(apiBase + '/entries/' + id + '/dismiss', { method: 'POST' });
+      if (!response.ok) {
+        showError('Could not dismiss that item. The server returned ' + response.status + '.');
+        return;
+      }
+      poolItems = await loadPool();
+      renderPool();
+      saveStatus.textContent = 'Dismissed. It will not come back from that person.';
+    } catch {
+      showError('Could not reach the server. Nothing was dismissed.');
+    }
+  }
+
+  function formatSources(sources) {
+    if (sources.length === 1) return sources[0];
+    return `${sources.slice(0, -1).join(', ')} and ${sources[sources.length - 1]}`;
+  }
+
+  function formatDate(text) {
+    const parsed = new Date(text.replace(' ', 'T') + 'Z');
+    return Number.isNaN(parsed.getTime())
+      ? text
+      : parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function renderPool() {
+    poolList.replaceChildren();
+    emptyState.hidden = poolItems.length > 0;
+
+    poolItems.forEach(item => {
+      const listItem = document.createElement('li');
+      const details = document.createElement('div');
+      details.className = 'item-details';
+
+      const trackText = document.createElement('span');
+      trackText.className = 'item-track';
+      trackText.textContent = item.track;
+
+      const metaText = document.createElement('span');
+      metaText.className = 'item-meta';
+      metaText.textContent = `from ${formatSources(item.sources)} · added ${formatDate(item.createdAt)}`;
+
+      details.append(trackText, metaText);
+
+      const dismissButton = document.createElement('button');
+      dismissButton.type = 'button';
+      dismissButton.className = 'remove-button';
+      dismissButton.textContent = 'Dismiss';
+      dismissButton.setAttribute('aria-label', `Dismiss ${item.track}`);
+      dismissButton.addEventListener('click', () => {
+        item.ids.forEach(id => dismissItem(id));
+      });
+
+      listItem.append(details, dismissButton);
+      poolList.append(listItem);
+    });
+  }
+
+  function showFieldError(message, field) {
+    field.setAttribute('aria-invalid', 'true');
+    showError(message);
+    field.focus();
+  }
+
+  poolForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    trackInput.removeAttribute('aria-invalid');
+    sourceInput.removeAttribute('aria-invalid');
+    formError.textContent = '';
+
+    const track = trackInput.value.trim();
+    const source = sourceInput.value.trim();
+
+    if (track.length < 1 || track.length > maxTrackLength) {
+      showFieldError(`Enter a track of 1 to ${maxTrackLength} characters.`, trackInput);
+      return;
+    }
+    if (source.length < 1 || source.length > maxSourceLength) {
+      showFieldError(`Enter the name of the person this came from, 1 to ${maxSourceLength} characters.`, sourceInput);
+      return;
+    }
+
+    if (!await savePool(track, source)) return;
+
+    poolItems = await loadPool();
+    renderPool();
+    trackInput.value = '';
+    sourceInput.value = '';
+    trackInput.focus();
+    saveStatus.textContent = `Added to the pool from ${source}.`;
+  });
+
+  loadPool().then(items => {
+    poolItems = items;
+    renderPool();
+  });
+})();
