@@ -2,8 +2,7 @@
 
 **Name: Semaj Johnosn**
 **Date:09/10/2026**
-**Assignment:** HW2, MGT 3745 O
-
+**Assignment:** HW5, MGT 3745 O (carried forward from HW2, revised each week)
 ---
 
 ## Kano-Classified Feature List
@@ -72,13 +71,24 @@ Stores only captured tracks and their source names — never a designated person
 ---
 
 ## 6. Acceptance
->WHEN a track plays for 30 continuous seconds in a shared session with a designated person, THE SYSTEM SHALL add it to the pool with that person's name within 5 seconds of the session ending.
->IF a captured track already exists in the user's library, THEN THE SYSTEM SHALL discard the capture and record nothing.
->WHILE a designation is active, THE SYSTEM SHALL capture any track that person plays 3 or more times in a rolling 7-day window.
->THE SYSTEM SHALL display a source name on every pool item and SHALL NOT display any item without one.
->IF the same track is captured from multiple people, THEN THE SYSTEM SHALL show one entry listing all source names.
->WHEN a user dismisses a pool item, THE SYSTEM SHALL not re-capture that track from the same source.
 
+- **A1:** WHEN a track plays for 30 continuous seconds in a shared session with a designated person, THE SYSTEM SHALL add it to the pool with that person's name within 5 seconds of the session ending.
+- **A2:** IF a captured track already exists in the user's library, THEN THE SYSTEM SHALL discard the capture and record nothing.
+- **A3:** WHILE a designation is active, THE SYSTEM SHALL capture any track that person plays 3 or more times in a rolling 7-day window.
+- **A4:** WHEN a designation is revoked by either party, THE SYSTEM SHALL stop all capture from that pairing within 60 seconds and retain items already captured.
+- **A5:** THE SYSTEM SHALL display a source name on every pool item and SHALL NOT display any item without one.
+- **A6:** IF the same track is captured from multiple people, THEN THE SYSTEM SHALL show one entry listing all source names.
+- **A7:** WHEN a user dismisses a pool item, THE SYSTEM SHALL not re-capture that track from the same source.
+- **A8:** IF a submitted item has no track or no source name, THEN THE SYSTEM SHALL reject it with a message naming the missing field.
+- **A9:** IF the same track is submitted from the same person twice, THEN THE SYSTEM SHALL reject the second submission.
+
+Added for the HW5 delegated feature (F4, mood and occasion labels):
+
+- **A10:** WHEN a user adds a mood label to a pool item, THE SYSTEM SHALL store that label with the item and display it on the item.
+- **A11:** WHEN a user filters the pool by a mood label, THE SYSTEM SHALL display only items carrying that label.
+- **A12:** IF a submitted mood label is empty or longer than 30 characters, THEN THE SYSTEM SHALL reject it with a message naming the problem.
+- **A13:** THE SYSTEM SHALL offer only labels the user has created, and SHALL NOT suggest, generate, or pre-populate mood labels.
+- **A14:** WHILE a filter is active, THE SYSTEM SHALL show which label is filtering and SHALL offer a way to clear it.
 
 ## Handoff Test
 `10 pts`
@@ -93,7 +103,6 @@ Stores only captured tracks and their source names — never a designated person
 
 Keep your dated Kano hypotheses and selected feature. Use IDs to connect evidence, jobs, and criteria. Clearly distinguish the one-feature HW3 implementation from the larger product scope.
 
-## Verification
 
 ## Verification
 
@@ -113,10 +122,12 @@ HW3 stored the pool in `localStorage`. HW4 moves it to a Cloudflare Worker and a
 | Two clients write to the same table | Two browsers add entries at the same time. | Both entries survive; neither overwrites the other. | Not tested. The pool is single-user by design, and ADR-002 defers multi-user behavior; a shared table with two writers is ADR-003 territory. | DEFERRED | ADR-002 |
 | A1, A2, A3, A4 | Not triggerable. | — | No streaming-platform capture exists in this build. | DEFERRED | ADR-001, still deferred by ADR-002 |
 
+### What the move to a server changed
+
 | Statement | HW3 verdict | HW4 verdict | Reason |
 |---|---|---|---|
-| Survive cleared cache | CANNOT TEST YET | | now testable |
-| Server unreachable | | | how would you simulate an outage? |
-| Server returns 500 | | | |
-| Server returns 400 | | | |
-| Second client writes to the same table | | | DEFERRED if ADR-002 says so |
+| Survive cleared cache | CANNOT TEST YET | PASS | In HW3 the pool *was* the cache, so the question was incoherent. Entries now live in D1 and survive clearing all site data. |
+| Server unreachable | Not applicable | PASS | There was no server in HW3. Simulated with `?apiDown`, which points the fetch at an endpoint the Worker does not answer; the page reports it and throws nothing. |
+| Server returns 500 | Not applicable | CANNOT TEST YET | The branch exists in `worker.js` but only fires on an unexpected exception. I cannot trigger one on a deployed Worker without shipping broken code. Next step: run `npm run dev` locally and break a query deliberately. |
+| Server returns 400 | Not applicable | PASS | Two paths, A8 and A9, both returned 400 with a message the page displayed as written. |
+| Second client writes to the same table | Not applicable | DEFERRED | ADR-002 states the pool is single-user by design; one shared table with no notion of ownership is ADR-003 territory. |
